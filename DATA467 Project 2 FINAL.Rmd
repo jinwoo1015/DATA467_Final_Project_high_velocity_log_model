@@ -1,0 +1,129 @@
+---
+title: "DATA 467 Final Project"
+author: "Jonathan Barry"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(faraway)
+library(tidyverse)
+```
+
+```{r}
+data <- read.csv("football_df.csv")
+head(data)
+
+data2 <- data[,c(2,3,4,5,6,7,8,9,10,12,13,14,15,16)]
+head(data2)
+dim(data2)
+```
+
+```{r}
+
+lmod <- glm(X80_and_over~Distance+Player_Load+PL_Min+Hi_Accel+Hi_Decel+Game+Skill+Big_Skill,family=binomial,data=data2)
+summary(lmod)
+```
+```{r}
+drop1(lmod,test='Chisq')
+```
+```{r}
+# Possible Final Model
+lmod2 <- glm(X80_and_over~I(Distance/100)+Hi_Accel+Skill+Big_Skill,family=binomial,data=data2)
+summary(lmod2)
+```
+
+```{r}
+# Test for overall significance of model to response
+sumary(lmod2)
+1 - pchisq(1076.51,4)
+```
+This model is definitely significant at a 95% level 0 < 0.05
+
+```{r}
+anova(lmod,lmod2,test="Chi")
+```
+
+
+```{r}
+# looking at residual deviance plots
+datard <- mutate(data2,residuals=residuals(lmod2),linpred=predict(lmod2))
+gdf <- group_by(datard,cut(linpred,breaks=unique(quantile(linpred,(1:100)/101))))
+diagdf <- summarise(gdf,residuals=mean(residuals),linpred=mean(linpred))
+plot(residuals~linpred,diagdf,xlab="linear predictor")
+```
+
+```{r}
+# detecting unusual points using qq plot
+qqnorm(residuals(lmod2))
+qqline(residuals(lmod2))
+```
+Normality is not expected, so qqplots are used to find unusual points. Other than the odd shape, no large unusual points seen.
+
+```{r}
+halfnorm(hatvalues(lmod2))
+```
+the 2 highest data points do not appear to be leverage points
+
+```{r}
+# testing goodness of fit
+dataqualitytest <- mutate(data2,predprob=predict(lmod2,type="response"),predout=ifelse(predprob<0.5,"no","yes"))
+xtabs(~X80_and_over+predout,dataqualitytest)
+
+# Sensitivity
+812 / (812+594)
+
+# Specificity
+1970 / (1970+423)
+```
+
+```{r}
+# ROC Curve to find AUC
+library(pROC)
+roc_obj <- roc(dataqualitytest$X80_and_over,dataqualitytest$predprob)
+auc(roc_obj)
+```
+```{r}
+# Visualizing
+plot(roc_obj,type="l")
+```
+
+```{r}
+# R squared goodness of fit stat
+# book recommends Naglekerke Pseudo R-Squared Statistic
+(1-exp((lmod2$dev-lmod2$null)/3799))/(1-exp(-
+lmod2$null/3799))
+```
+
+```{r}
+library(glmtoolbox)
+hltest(lmod2)
+```
+
+
+```{r}
+summary(lmod2)
+```
+
+```{r}
+exp(coefficients(lmod2))
+```
+
+```{r}
+2.4760043 * 0.0288478
+
+exp(-3.545722)
+```
+
+
+$$ \widehat{logit(p)} = -3.54 + 0.0561 X_1 + 0.0461 X_2 + 0.907 X_3 + 0.853 X_4$$
+
+
+Conclusions:
+
+where $\widehat{logit(p)}$ stands for the estimated log-odds of hitting 80% of maximum speed or above in a practice, $X_1$ represents distance (in 100's of yards), $X_2$ represents the number of times a player had 'high' acceleration set by the Sports Science Department, $X_3$ represents the presence of the 'Skill' category, which increases the base average odds by $e^{-3.545722+0.906646} = 0.0714$, and $X_4$ represents the presence of the 'Big Skill' category, which increases the base average odds by $e^{-3.545722+0.853454} = 0.0677$. The intercept represents the 'Line' category as reference, which bases the average odds at $e^{-3.545722} = 0.0288478$.
+
